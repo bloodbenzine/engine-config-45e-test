@@ -1,0 +1,39 @@
+name: Unpack app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify and unpack archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="Engine-Config-45e-Standalone-0.8.1-pad.2.zip"
+          echo "2e1fd4d8172c818a99da99d022470512c1432cc89e0180ac18ae21cab60572c5  $archive" | sha256sum -c -
+          temp_dir="$(mktemp -d)"
+          unzip -q "$archive" -d "$temp_dir"
+          cp -a "$temp_dir/Engine-Config-45e-Standalone/." .
+          test -f apps/engine_config_45e_test/app.json
+          test -f mgu-repo.json
+
+      - name: Save application files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps kit deploy LICENSE package.json mgu-repo.json README.md UPSTREAM.txt upstream-pad-change.patch
+          if git diff --cached --quiet; then
+            echo "Application files are already unpacked."
+          else
+            git commit -m "Unpack standalone Engine Config 45e test"
+            git push
+          fi
