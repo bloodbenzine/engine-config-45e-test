@@ -2,7 +2,7 @@
   "id": "engine_config_45e_test",
   "title": "Engine Config 45e Test",
   "description": "Experimental 45e PAD test based on upstream 0.8.1 and issue #96. VIP 0F2530 requires PAD, stationary and confirmed P. Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link, or following the driving mode (Sport open, Eco Pro closed); held against the DME's timeout, Close handed back above a set engine speed. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
-  "version": "0.8.1-45e-pad.2",
+  "version": "version": "0.8.2",
   "vendor": "custom",
   "loggingId": "E45T",
   "iconGlyph": "sliders",
