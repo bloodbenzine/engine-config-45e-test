@@ -1,0 +1,6 @@
+https://github.com/cauliflowermossgrape/idrive7-apps
+Commit: 180537a0bdf39163046a6855e7928eb35bb47c7b
+Engine Config upstream version: 0.8.1
+Test version: 0.8.1-45e-pad.2
+Issue: https://github.com/cauliflowermossgrape/idrive7-apps/issues/96
+Standalone ID: engine_config_45e_test

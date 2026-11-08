@@ -1,0 +1,175 @@
+diff --git a/apps/live_adjustments/README.md b/apps/live_adjustments/README.md
+index e7f17e1..cf42ed9 100644
+--- a/apps/live_adjustments/README.md
++++ b/apps/live_adjustments/README.md
+@@ -1,3 +1,5 @@
++> TEST FORK 0.8.1-45e-pad.1: VIP 0F2530 now requires PAD (VehicleCondition 7), stationary, and confirmed P. READY is blocked, including READY with zero ICE RPM. This supersedes the hybrid guidance below. Issue #96 reports success on one 45e without logs or a VIP index; 0F2530 is inferred from #52. NRC 33 in PAD has an unconfirmed cause. No security unlock is attempted. Physical vehicle behavior remains unverified for this build.
++
+ # Live Adjustments
+ 
+ Live tweaks over the head unit's own diagnostic link (InternalTasu, DME `0x12`), one tab
+diff --git a/apps/live_adjustments/app.json b/apps/live_adjustments/app.json
+index 567b41a..9f2d92f 100644
+--- a/apps/live_adjustments/app.json
++++ b/apps/live_adjustments/app.json
+@@ -1,8 +1,8 @@
+ {
+   "id": "live_adjustments",
+-  "title": "Engine Config",
+-  "description": "Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link, or following the driving mode (Sport open, Eco Pro closed); held against the DME's timeout, Close handed back above a set engine speed. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
+-  "version": "0.8.1",
++  "title": "Engine Config 45e Test",
++  "description": "Experimental 45e PAD test based on upstream 0.8.1 and issue #96. VIP 0F2530 requires PAD, stationary and confirmed P. Engine Config for BMW MGU ID7. Exhaust Flap: OEM, OPEN and CLOSE over the car's own diagnostic link, or following the driving mode (Sport open, Eco Pro closed); held against the DME's timeout, Close handed back above a set engine speed. With BM3 or MHD picked in Settings: engine map switching, burbles, ASD and Max Cooling. Experimental: xDrive off until the ignition cycle (DSC LMV_FUNKTION), behind its own setting",
++  "version": "0.8.1-45e-pad.1",
+   "vendor": "custom",
+   "loggingId": "OAA0",
+   "iconGlyph": "sliders",
+@@ -99,7 +99,7 @@
+         ]
+       ]
+     },
+-{
++    {
+       "key": "closeLimit",
+       "label": "Close: hand back above",
+       "type": "choice",
+@@ -199,7 +199,22 @@
+         ]
+       ]
+     },
+-    {"key": "layout", "label": "Screen layout", "type": "choice", "default": "full", "options": [["full", "Full screen"], ["standard", "Standard"]]},
++    {
++      "key": "layout",
++      "label": "Screen layout",
++      "type": "choice",
++      "default": "full",
++      "options": [
++        [
++          "full",
++          "Full screen"
++        ],
++        [
++          "standard",
++          "Standard"
++        ]
++      ]
++    },
+     {
+       "key": "renderer",
+       "label": "Renderer",
+diff --git a/apps/live_adjustments/xdrive.js b/apps/live_adjustments/xdrive.js
+index 4123979..37c733b 100644
+--- a/apps/live_adjustments/xdrive.js
++++ b/apps/live_adjustments/xdrive.js
+@@ -92,7 +92,8 @@ const VIP_UNITS = { '0F2520': 'VIP_G05', '0F2530': 'VIP_G05', '0F2860': 'VIP_G30
+ // it runs: 0F2520 on an ICE G05 (diesel X5, IB_G05 0F2500, LMV 0F2180), measured: engine running 7F 2E 33 every
+ // time; engine off, ignition on (state 7), P, stationary: accepted, xDrive to RWD, front-axle torque ~0, back
+ // after an ignition cycle
+-const VIP_ENGINE_OFF = ['0F2520'];
++// Experimental 45e PAD support reported in issue #96; VIP index inferred from #52.
++const VIP_ENGINE_OFF = ['0F2520', '0F2530'];
+ const LMV_VARIANTS = {                  // G-series transfer cases by SGBD index
+     '0F2180': 'LMV-G ATC13',
+     '0F29E0': 'LMV-G ATC13_2',
+@@ -404,6 +405,17 @@ class XDriveControl {
+     /** The conditions the DSC wants, as far as the head unit can see them. ok: true / false / null (cannot tell). */
+     checks() {
+         const d = this._live();
++        if (this.path === 'vip' && this.vipIndex === '0F2530') {
++            // 45e test build: require PAD, not hybrid READY with the ICE temporarily stopped.
++            // In PAD the upstream vehicle model treats RPM as potentially stale.
++            return [
++                { label: 'Live car data', ok: !d.demo },
++                { label: 'PAD ignition on (not READY)', ok: !d.demo && d.condition === IGNITION },
++                { label: 'Stationary', ok: !d.demo && d.speed !== null && d.speed >= 0 && d.speed < 0.5 },
++                { label: 'Selector in P', ok: !d.demo && d.stage === 'P' },
++                { label: 'Parking brake on', ok: null },
++            ];
++        }
+         if (this.vipEngineOff()) {
+             // VIP 0F2520 (ICE G05): the job is taken with the engine off, the ignition on, in P, stationary;
+             // the engine running gets NRC 33. The DSC path's engine-off checks.
+@@ -535,7 +547,8 @@ class XDriveControl {
+                 this._diagnostic('command_not_accepted', { command: what, reason: 'ecu_negative_response' });
+                 // a VIP that wants a security unlock (G05 xDrive45e, issue #52): this app does no security access
+                 // VIP 0F2520 (ICE G05): NRC 33 means the engine runs - it takes the job with the engine off
+-                this.note = name + ' refused: ' + (vip && r[2] === 0x33 && this.vipEngineOff() ? 'the engine is running · switch it off, keep the ignition on, then try again'
++                this.note = name + ' refused: ' + (vip && r[2] === 0x33 && this.vipIndex === '0F2530' ? 'NRC 33 (access denied) in PAD; cause unconfirmed; no unlock attempted'
++                    : vip && r[2] === 0x33 && this.vipEngineOff() ? 'the engine is running · switch it off, keep the ignition on, then try again'
+                     : vip && r[2] === 0x33 ? 'security access · this VIP needs an unlock the app does not do'
+                     : NRC_TEXT[r[2]] || 'NRC ' + hex2(r[2]));
+                 this.noteType = 'warn';
+diff --git a/kit/tools/test_live_adjustments.js b/kit/tools/test_live_adjustments.js
+index 8d50c59..a0cb43e 100644
+--- a/kit/tools/test_live_adjustments.js
++++ b/kit/tools/test_live_adjustments.js
+@@ -82,7 +82,7 @@ function dsc(kind) {
+         else if (g05 && target === 0x39 && sid === 0x2E && data[0] === 0xDB && data[1] === 0x2F) {
+             if (kind === 'g05vip33' || (kind === 'g05ice' && st.engine)) r = [0x7F, 0x2E, 0x33];
+             else if (kind === 'g05ice') { st.vip = data[2]; r = [0x6E, 0xDB, 0x2F]; }
+-            else if (!st.engine) r = [0x7F, 0x2E, 0x22];
++            else if (st.engine) r = [0x7F, 0x2E, 0x33];
+             else { st.vip = data[2]; r = [0x6E, 0xDB, 0x2F]; }
+         } else if (target === 0x39 && sid === 0x22 && data[0] === 0xF1) r = [0x62, 0xF1, 0x50, 0x00, 0x0F, 0x25, 0x30];  // G22: VIP_G05 too
+         else if (target === 0x19 && sid === 0x22 && data[0] === 0xF1 && data[1] === 0x50) r = kind === 'nolmv' ? [0x7F, 0x22, 0x31] : [0x62, 0xF1, 0x50, 0x00, 0x0F, g01 ? 0x29 : 0x21, g01 ? 0xE0 : 0x80];
+@@ -244,19 +244,16 @@ async function xdriveChecks() {
+     assert.strictEqual(s.x.view().path, 'vip');
+     assert.strictEqual(s.x.view().unit, 'IB_G05');
+     assert.strictEqual(s.x.view().vipIndex, '0F2530');
+-    // ignition on only: the VIP job wants the car running / READY - nothing is sent
+-    await s.x.requestOff(); await s.x.requestOff();
++    // 45e PAD test: a first press only confirms; second sends to VIP, never DSC.
++    await s.x.requestOff();
+     assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), []);
+-    assert(/engine running or READY/.test(s.x.note), s.x.note);
+-    // READY, stationary in P: the one VIP write, nothing to the DSC
+-    s.car.v.condition = 10; s.d.engine = true;
+-    await s.x.requestOff(); await s.x.requestOff();
++    await s.x.requestOff();
+     assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), ['vip 2e db 2f 00']);
+     assert.strictEqual(s.x.view().mode, 'REQUESTED');              // VIP path: the LMV is not read after the write
+     assert.strictEqual(s.x.noteType, 'go');
+     // the mode is not read from DB44 (it read 0 in AWD on the G22): the LMV qualifier (still .. 00 20
+     // in the stub: the VIP write changed nothing there) shows AWD, torque is shown
+-    s.car.v.speed = 10; clock += 5000;
++    s.car.v.condition = 10; s.d.engine = true; s.car.v.speed = 10; clock += 5000;
+     await s.x.tick();
+     assert.strictEqual(s.x.view().mode, 'AWD');
+     assert.strictEqual(s.x.view().modeFrom, 'lmv');
+@@ -362,13 +359,25 @@ async function xdriveChecks() {
+     assert(/engine is running/.test(s.x.note) && !/unlock/.test(s.x.note), s.x.note);
+ 
+     // a VIP that wants security access (G05, issue #52): said plainly, nothing recorded as done
+-    s = await mk('on', 'g05vip33', { rpm: 0, condition: 10 });
++    s = await mk('on', 'g05vip33', { rpm: 0, condition: 7 });
+     s.d.engine = true;
+     await s.x.requestOff(); await s.x.requestOff();
+     assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), ['vip 2e db 2f 00']);
+-    assert(/VIP refused: security access/.test(s.x.note), s.x.note);
++    assert(/NRC 33 \(access denied\) in PAD/.test(s.x.note), s.x.note);
+     assert.strictEqual(s.x.requested, false);
+ 
++    // 45e fails closed without PAD, valid speed or positively confirmed P.
++    for (const live of [
++        { condition: 10, rpm: 0 }, { condition: 10, rpm: 800 },
++        { condition: 5 }, { condition: null }, { speed: 1 }, { speed: null },
++        { speed: -1 }, { stage: 'D' }, { stage: 'R' }, { stage: 'N' },
++        { stage: null }, { demo: true },
++    ]) {
++        s = await mk('on', 'g05', Object.assign({ rpm: 0, condition: 7 }, live));
++        await s.x.requestOff(); await s.x.requestOff();
++        assert.deepStrictEqual(s.d.calls.filter((c) => / 2e /.test(c)), [], JSON.stringify(live));
++    }
++
+     // a confirm press that comes too late only asks again
+     s = await mk('on', 'g22');
+     await s.x.requestOff(); clock += 7000; await s.x.requestOff();
+@@ -409,7 +418,7 @@ async function xdriveChecks() {
+     // Diagnostics observe existing traffic; raw NRCs do not imply an engine-state diagnosis.
+     for (const kind of ['g22', 'g05']) {
+         for (const nrc of [0x13, 0x22, 0x31, 0x33, 0x42, 0x83, 0x90]) {
+-            const live = { rpm: kind === 'g05' ? 800 : 0, condition: kind === 'g05' ? 10 : 7 };
++            const live = { rpm: 0, condition: 7 };
+             s = await mk('on', kind, live, (physical) => async (target, sid, data, timeout, accept) =>
+                 sid === 0x2E ? [0x7F, sid, nrc] : physical(target, sid, data, timeout, accept));
+             await s.x.requestOff(); await s.x.requestOff();
